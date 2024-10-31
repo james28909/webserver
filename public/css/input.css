@@ -1,0 +1,28 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+    .nav-btn {
+        @apply p-4 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 flex items-center justify-center text-gray-600 dark:text-gray-300;
+        min-width: 48px; /* Minimum touch target size */
+        min-height: 48px; /* Minimum touch target size */
+        touch-action: manipulation; /* Optimize for touch */
+    }
+
+    .nav-btn.active {
+        @apply text-blue-500 dark:text-blue-400;
+    }
+
+    .video-thumbnail {
+        @apply cursor-pointer rounded-lg overflow-hidden shadow-md hover:shadow-lg transition-shadow bg-white dark:bg-gray-800;
+    }
+
+    .video-thumbnail img {
+        @apply w-full h-48 object-cover;
+    }
+
+    .video-title {
+        @apply p-2 text-sm font-medium text-gray-800 dark:text-gray-200 truncate;
+    }
+}
