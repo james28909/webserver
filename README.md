@@ -23,6 +23,8 @@ A web application that serves as a proxy server for YouTube content, providing e
 2. npm install
 3. npm start
 
-the website should be available at http://localhost:8080
+* Note: If you make any changes to css make them in public/css/input.css, and then npm run build-css. this will generate a new public/css/styles.css
+
+The website should be available at http://localhost:8080
 
 
