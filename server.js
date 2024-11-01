@@ -11,7 +11,7 @@ const https = require('https');
 
 const app = express();
 const port = 8080;
-const cookiePath = path.join(__dirname, 'www.youtube.com_cookies.txt');
+const netrcPath = path.join(__dirname, '.netrc');
 
 // Buffer settings
 const INITIAL_BUFFER_THRESHOLD = 2 * 1024 * 1024; // 2MB
@@ -88,65 +88,89 @@ app.get('/local', (req, res) => {
 // Add this function before the routes
 async function updateVideosCache() {
     try {
+        console.log('Updating videos cache...');
         const result = await youtubeDl('https://www.youtube.com/', {
-            cookies: cookiePath,
+            netrc: true,
+            netrcLocation: netrcPath,
             flatPlaylist: true,
-            dumpSingleJson: true
+            dumpSingleJson: true,
+            skipDownload: true,
+            simulate: true,
+            noCheckCertificates: true,
+            noWarnings: true,
+            playlistEnd: 50,  // Limit number of videos
+            addHeader: [
+                'referer:youtube.com',
+                'user-agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+            ]
         });
 
-        if (!result.entries || !Array.isArray(result.entries)) {
-            throw new Error('No entries found');
+        console.log('Raw result:', JSON.stringify(result, null, 2));
+
+        // Handle both single video and playlist responses
+        const entries = result.entries || (result.id ? [result] : []);
+        
+        if (!entries.length) {
+            throw new Error('No entries found in home feed');
         }
 
-        const videos = result.entries.map(entry => ({
-            id: { videoId: entry.id },
+        const videos = entries.map(entry => ({
+            id: { videoId: entry.id || entry.url },
             snippet: {
                 title: entry.title,
                 thumbnails: {
-                    medium: { url: entry.thumbnails?.[0]?.url || entry.thumbnail || '/img/no_thumbnail.jpg' }
+                    medium: { 
+                        url: entry.thumbnail || entry.thumbnails?.[0]?.url || '/img/no_thumbnail.jpg'
+                    }
                 }
             }
         }));
 
         videosCache.data = videos;
         videosCache.lastUpdated = new Date();
-        console.log('Videos cache updated at:', videosCache.lastUpdated);
+        console.log(`Videos cache updated with ${videos.length} videos at:`, videosCache.lastUpdated);
     } catch (error) {
-        console.error('Cache update error:', error);
+        console.error('Videos cache update error:', error);
+        console.error('Error stack:', error.stack);
     }
 }
 
 // Modify updateSubscriptionsCache function
 async function updateSubscriptionsCache() {
     try {
+        console.log('Updating subscriptions cache...');
         const result = await youtubeDl('https://www.youtube.com/feed/subscriptions', {
-            cookies: cookiePath,
+            netrc: true,
+            netrcLocation: netrcPath,
             dumpSingleJson: true,
-            flatPlaylist: true,      // Fetch a flat list of videos
-            playlistEnd: 100,         // Limit to the first 20 videos
-            skipDownload: true,      // Do not download video data
-            simulate: true,          // Do not download video files
-            noCheckCertificate: true, // Bypass certificate checks
-            noWarnings: true,        // Suppress warnings
-            preferFreeFormats: true, // Prefer free formats
+            flatPlaylist: true,
+            skipDownload: true,
+            simulate: true,
+            noCheckCertificates: true,
+            noWarnings: true,
+            playlistEnd: 50,  // Limit number of videos
             addHeader: [
                 'referer:youtube.com',
                 'user-agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
-            ],
+            ]
         });
 
-        if (!result.entries || !Array.isArray(result.entries)) {
+        console.log('Raw result:', JSON.stringify(result, null, 2));
+
+        // Handle both single video and playlist responses
+        const entries = result.entries || (result.id ? [result] : []);
+
+        if (!entries.length) {
             throw new Error('No entries found in subscriptions feed');
         }
 
-        // Extract thumbnails and other data
-        const videos = result.entries.map(entry => ({
-            id: { videoId: entry.id },
+        const videos = entries.map(entry => ({
+            id: { videoId: entry.id || entry.url },
             snippet: {
                 title: entry.title,
                 thumbnails: {
                     medium: {
-                        url: entry.thumbnails?.[0]?.url || entry.thumbnail || '/img/no_thumbnail.jpg'
+                        url: entry.thumbnail || entry.thumbnails?.[0]?.url || '/img/no_thumbnail.jpg'
                     }
                 }
             }
@@ -154,9 +178,10 @@ async function updateSubscriptionsCache() {
 
         subscriptionsCache.data = videos;
         subscriptionsCache.lastUpdated = new Date();
-        console.log('Subscriptions cache updated at:', subscriptionsCache.lastUpdated);
+        console.log(`Subscriptions cache updated with ${videos.length} videos at:`, subscriptionsCache.lastUpdated);
     } catch (error) {
         console.error('Subscriptions cache update error:', error);
+        console.error('Error stack:', error.stack);
     }
 }
 
@@ -267,7 +292,8 @@ app.get('/api/videos', async (req, res) => {
         } else if (searchQuery) {
             // Handle search queries directly without caching
             const result = await youtubeDl(`ytsearch20:${searchQuery}`, {
-                cookies: cookiePath,
+                netrc: true,
+                netrcLocation: netrcPath,
                 flatPlaylist: true,
                 dumpSingleJson: true
             });
@@ -410,9 +436,72 @@ app.get('/api/local', async (req, res) => {
 
 // Modify the /api/download/:videoId endpoint - update the beginning of the try block
 app.get('/api/download/:videoId', async (req, res) => {
-    const videoId = req.params.videoId;
+    const videoId = decodeURIComponent(req.params.videoId);
     
     try {
+        // Check if this is a local file (ends with .mp4)
+        if (videoId.endsWith('.mp4')) {
+            const filePath = path.join(__dirname, 'downloads', videoId);
+            
+            // Verify file exists
+            if (!fs.existsSync(filePath)) {
+                console.error('Local file not found:', filePath);
+                throw new Error('Local file not found');
+            }
+
+            const stat = fs.statSync(filePath);
+            const fileSize = stat.size;
+
+            // Handle range requests for seeking
+            const range = req.headers.range;
+            if (range) {
+                const parts = range.replace(/bytes=/, "").split("-");
+                const start = parseInt(parts[0], 10);
+                const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+                const chunksize = (end - start) + 1;
+                
+                const stream = fs.createReadStream(filePath, { start, end });
+                
+                res.writeHead(206, {
+                    'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+                    'Accept-Ranges': 'bytes',
+                    'Content-Length': chunksize,
+                    'Content-Type': 'video/mp4'
+                });
+                
+                stream.pipe(res);
+                
+                // Handle stream errors
+                stream.on('error', (error) => {
+                    console.error('Stream error:', error);
+                    if (!res.headersSent) {
+                        res.status(500).json({ error: 'Error streaming file' });
+                    }
+                });
+            } else {
+                // No range requested, send entire file
+                const stream = fs.createReadStream(filePath);
+                
+                res.writeHead(200, {
+                    'Content-Length': fileSize,
+                    'Content-Type': 'video/mp4',
+                    'Accept-Ranges': 'bytes'
+                });
+                
+                stream.pipe(res);
+                
+                // Handle stream errors
+                stream.on('error', (error) => {
+                    console.error('Stream error:', error);
+                    if (!res.headersSent) {
+                        res.status(500).json({ error: 'Error streaming file' });
+                    }
+                });
+            }
+            return;
+        }
+
+        // If not a local file, handle as YouTube video download
         // Get video details from YouTube API
         const videoResponse = await youtube.videos.list({
             part: 'snippet',
@@ -461,7 +550,8 @@ app.get('/api/download/:videoId', async (req, res) => {
         const downloadProcess = youtubeDl.exec(
             `https://www.youtube.com/watch?v=${videoId}`,
             {
-                cookies: cookiePath,
+                netrc: true,
+                netrcLocation: netrcPath,
                 format: 'best[ext=mp4]/best', // Simplified format string
                 output: '-',  // Output to stdout
                 mergeOutputFormat: 'mp4',

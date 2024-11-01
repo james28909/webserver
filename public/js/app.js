@@ -150,19 +150,36 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Reset player before loading new source
             player.stop();
+
+            // Check if this is a local file
+            const isLocalFile = videoId.endsWith('.mp4');
+            const videoUrl = `${CONFIG.API_URL}/api/download/${encodeURIComponent(videoId)}`;
+            
+            console.log('Playing video:', { videoId, title, isLocalFile, videoUrl });
             
             player.source = {
                 type: 'video',
                 title: title,
                 sources: [{
-                    src: `${CONFIG.API_URL}/api/download/${videoId}`,
+                    src: videoUrl,
                     type: 'video/mp4',
+                    size: 1080
                 }]
             };
+
+            // Add error handler specific to this video
+            const errorHandler = (error) => {
+                console.error('Plyr error:', error);
+                alert(`Error playing video: ${error.message || 'Unknown error'}`);
+            };
+
+            player.once('error', errorHandler);
 
             // Force player to load and play
             await player.play().catch(error => {
                 console.error('Play error:', error);
+                player.off('error', errorHandler);
+                throw error;
             });
 
         } catch (error) {
