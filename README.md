@@ -9,6 +9,7 @@ A web application that serves as a proxy server for YouTube content, providing e
 - Static file serving
 - Middleware support
 - Efficient routing system
+- OAuth login instead of cookies via yt-dlp (this app uses youtube-dl-exec so it may or may not conflict with any existing installation of yt-dlp)
 
 ## Setup
 
@@ -20,8 +21,9 @@ A web application that serves as a proxy server for YouTube content, providing e
 ### Installation
 
 1. Clone the repository and navigate to the project directory.
-2. npm install
-3. npm start
+2. Input your your Youtube API key and your channel id into .env file.
+3. npm install
+4. npm start
 
 * Note: If you make any changes to css make them in public/css/input.css, and then npm run build-css. this will generate a new public/css/styles.css
 
