@@ -15,8 +15,7 @@ public/img/*
 www.youtube.com_cookies.txt
 webserver.workspace.code-workspacebackup_.css
 backup_.css
+.env
 
 # Files to keep in repo
-# Be sure to remove your keys before you push changes to your repo
-!.env
 !package-lock.json
