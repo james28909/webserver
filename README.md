@@ -9,6 +9,7 @@ A web application that serves as a proxy server for YouTube content, providing e
 - Static file serving
 - Middleware support
 - Efficient routing system
+- OAuth login instead of cookies via yt-dlp (this app uses youtube-dl-exec so it may or may not conflict with any existing installation of yt-dlp)
 
 ## Setup
 
